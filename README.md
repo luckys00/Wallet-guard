@@ -1,16 +1,75 @@
-# React + Vite
+# 🛡️ WalletGuard — Ethereum Wallet Security Scanner
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+**WalletGuard** is a free, open-source Ethereum wallet security health scanner.  
+Paste any wallet address and get an instant **security score (0–100)** with detailed findings.
 
-Currently, two official plugins are available:
+> Built for [The DAO Security Fund](https://thedao.fund) — Gitcoin Round, July 2026
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+🌐 **Live Demo:** [wallet-guard.vercel.app](https://wallet-guard.vercel.app)
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🔍 What It Checks
 
-## Expanding the Oxlint configuration
+| Check | Description |
+|---|---|
+| 🔓 **Token Approvals** | Detects unlimited ERC-20 spend approvals |
+| ☣️ **Malicious Contracts** | Flags interactions with known exploited contracts |
+| ☠️ **Address Poisoning** | Detects lookalike zero-value poisoning attacks (last 30 days) |
+| 🎨 **NFT Permissions** | Checks open `setApprovalForAll` permissions |
+| 🔷 **ENS Identity** | Verifies on-chain identity via ENS name |
+| 📊 **Activity Score** | Wallet activity and ETH balance |
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+---
+
+## 🚀 Quick Start
+
+```bash
+git clone https://github.com/luckys00/Wallet-guard.git
+cd Wallet-guard
+npm install
+```
+
+Create a `.env` file:
+```
+VITE_ETHERSCAN_API_KEY=your_free_key_from_etherscan.io
+```
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173)
+
+---
+
+## 🛠️ Tech Stack
+
+- **React + Vite** — Frontend framework
+- **ethers.js** — Ethereum address validation
+- **Etherscan API** — On-chain data (free tier)
+- **ENS API** — Identity lookup
+- **Vercel** — Hosting (free)
+
+---
+
+## 🔒 Privacy
+
+- ✅ **Read-only** — No wallet connection required
+- ✅ **No private keys** — Only public address needed
+- ✅ **No tracking** — No analytics or data storage
+- ✅ **Open source** — Audit the code yourself
+
+---
+
+## 📄 License
+
+MIT License — Free to use, fork, and contribute.
+
+---
+
+## 🤝 Contributing
+
+PRs welcome! Open an issue to discuss new security checks.
+
+Built with ❤️ for the Ethereum security community.
