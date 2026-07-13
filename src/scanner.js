@@ -138,6 +138,13 @@ export async function checkIsContract(address) {
 // ── Check 3: Address Poisoning Detection ─────────────────────────────────
 
 export async function checkAddressPoisoning(address) {
+  const addrLower = address.toLowerCase();
+  
+  // Skip poisoning checks for null/burn addresses
+  if (addrLower === '0x0000000000000000000000000000000000000000' || addrLower === '0x000000000000000000000000000000000000dead') {
+    return 0;
+  }
+
   const tokenTx = await fetchEtherscan({
     module: 'account',
     action: 'tokentx',
@@ -147,21 +154,27 @@ export async function checkAddressPoisoning(address) {
     page: 1,
   });
 
-  const addrLower = address.toLowerCase();
-  const addrPrefix = addrLower.slice(0, 8);
-  const addrSuffix = addrLower.slice(-6);
+  const addrPrefix = addrLower.slice(0, 8); // e.g. 0x123456
+  const addrSuffix = addrLower.slice(-6);  // e.g. abcdef
   const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
 
   const poisoningAttempts = (tokenTx || []).filter((tx) => {
     const from = tx.from?.toLowerCase() || '';
     const to = tx.to?.toLowerCase() || '';
+    
+    // Ignore mint/burn transactions
+    if (from === '0x0000000000000000000000000000000000000000') return false;
+
     const recent = parseInt(tx.timeStamp) > thirtyDaysAgo;
     const isIncoming = to === addrLower;
-    const zeroValue = tx.value === '0';
+
+    // Poisoning uses a vanity address matching both prefix and suffix to spoof the user
     const looksLikeTarget =
-      (from.startsWith(addrPrefix) || from.endsWith(addrSuffix)) &&
+      from.startsWith(addrPrefix) &&
+      from.endsWith(addrSuffix) &&
       from !== addrLower;
-    return recent && isIncoming && (zeroValue || looksLikeTarget);
+
+    return recent && isIncoming && looksLikeTarget;
   });
 
   return poisoningAttempts.length;
