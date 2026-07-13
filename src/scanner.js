@@ -520,15 +520,31 @@ export async function scanWallet(address, onStep) {
   }
 
   // ── Score Calculation ──────────────────────────────────────────────────
-  const criticalPenalty = issues.critical.length * 20;
-  const warningPenalty = issues.warning.length * 7;
-  const safeBonus = issues.safe.length * 4;
-  const score = Math.max(0, Math.min(100, 100 - criticalPenalty - warningPenalty + safeBonus));
+  // Start with 100
+  let calculatedScore = 100;
+  
+  // Deductions (no bonuses to offset risk)
+  const criticalDeduction = issues.critical.length * 35;
+  const warningDeduction = issues.warning.length * 15;
+  calculatedScore = Math.max(0, 100 - criticalDeduction - warningDeduction);
+
+  // Apply strict caps based on severity:
+  // 1. Any critical issue immediately limits the score to 35 (Grade F - Critical Risk)
+  if (issues.critical.length > 0) {
+    calculatedScore = Math.min(calculatedScore, 35);
+  }
+  // 2. Any warning immediately limits the score to 69 (Grade C - Moderate Risk)
+  else if (issues.warning.length > 0) {
+    calculatedScore = Math.min(calculatedScore, 69);
+  }
+
+  const score = calculatedScore;
 
   let grade, label;
   if (score >= 85)      { grade = 'A'; label = 'Secure'; }
-  else if (score >= 65) { grade = 'B'; label = 'Moderate Risk'; }
-  else if (score >= 40) { grade = 'C'; label = 'At Risk'; }
+  else if (score >= 70) { grade = 'B'; label = 'Low Risk'; }
+  else if (score >= 50) { grade = 'C'; label = 'Moderate Risk'; }
+  else if (score >= 40) { grade = 'D'; label = 'High Risk'; }
   else                  { grade = 'F'; label = 'Critical Risk'; }
 
   if (recommendations.length === 0) {
