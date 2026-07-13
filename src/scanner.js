@@ -127,6 +127,13 @@ export async function checkIsContract(address) {
     }
     
     const code = data.result || '';
+    
+    // EIP-7702 EOA Smart Account check:
+    // If code starts with '0xef01', it's a delegated EOA wallet (not a traditional contract)
+    if (code.startsWith('0xef01')) {
+      return false;
+    }
+    
     // '0x' means EOA (regular wallet), anything longer means contract
     return code && code !== '0x' && code.length > 2;
   } catch {
