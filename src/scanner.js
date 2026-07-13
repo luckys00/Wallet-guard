@@ -321,6 +321,17 @@ export async function scanWallet(address, onStep) {
     });
   }
 
+  // Check if scanned address itself is a known malicious hacker/exploit address
+  if (KNOWN_BAD_CONTRACTS.has(address.toLowerCase())) {
+    issues.critical.push({
+      title: 'Flagged Malicious Address Detected',
+      description: 'This address itself is flagged in security databases as a hacker, exploiter, or phishing entity.',
+      meta: 'High security risk: associated with crypto exploits/hacks',
+      icon: '🚨',
+    });
+    recommendations.push('WARNING: This address is flagged. Do not interact with it or trust funds associated with it.');
+  }
+
   // Step 1 — Token Approvals (using shared txList)
   const approvals = checkTokenApprovals(txList, address);
   const unlimitedApprovals = approvals.filter((a) => a.isUnlimited);
