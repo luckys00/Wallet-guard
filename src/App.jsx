@@ -5,6 +5,18 @@ import 'react-circular-progressbar/dist/styles.css';
 import { scanWallet } from './scanner';
 import './index.css';
 
+// ── ENS Resolver ─────────────────────────────────────────────────────────────
+async function resolveENS(name) {
+  try {
+    const res = await fetch(`https://api.ensideas.com/ens/resolve/${name}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.address || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Score Colors ────────────────────────────────────────────────────────────
 function getScoreColor(score) {
   if (score >= 80) return '#10b981';
@@ -23,11 +35,12 @@ function getScoreTextClass(score) {
 const STEPS = [
   'Validating address...',
   'Checking token approvals...',
-  'Running security intelligence check...',
+  'Checking malicious contract interactions...',
   'Scanning for address poisoning attacks...',
   'Checking NFT permissions...',
   'Looking up ENS name...',
-  'Checking wallet activity...',
+  'Checking wallet activity & balance...',
+  'Checking token security (honeypot scan)...',
 ];
 
 // ── Empty State ──────────────────────────────────────────────────────────────
@@ -279,17 +292,37 @@ function ResultsView({ results, address }) {
 export default function App() {
   const [inputAddress, setInputAddress] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [results, setResults] = useState(null);
   const [error, setError] = useState('');
   const [scannedAddress, setScannedAddress] = useState('');
 
   const handleScan = async (addressOverride) => {
-    const address = addressOverride || inputAddress.trim();
+    let input = (addressOverride || inputAddress).trim();
     if (addressOverride) setInputAddress(addressOverride);
 
-    if (!address) { setError('Please enter a wallet address.'); return; }
-    if (!isAddress(address)) { setError('Invalid Ethereum address. Please check and try again.'); return; }
+    if (!input) { setError('Please enter a wallet address or ENS name.'); return; }
+
+    // If ENS name (contains a dot), resolve it first
+    let address = input;
+    if (!isAddress(input)) {
+      if (input.includes('.eth') || input.includes('.')) {
+        setResolving(true);
+        setError('');
+        const resolved = await resolveENS(input);
+        setResolving(false);
+        if (!resolved) {
+          setError(`Could not resolve "${input}" — try the full 0x address instead.`);
+          return;
+        }
+        address = resolved;
+        setInputAddress(address); // show resolved address in input
+      } else {
+        setError('Invalid address. Enter a 0x address or ENS name (e.g. vitalik.eth).');
+        return;
+      }
+    }
 
     setError('');
     setResults(null);
@@ -302,7 +335,7 @@ export default function App() {
       setResults(result);
     } catch (err) {
       console.error(err);
-      setError('Scan failed. Please check your API keys or try again later.');
+      setError('Scan failed. API may be rate-limited. Please wait a moment and try again.');
     } finally {
       setScanning(false);
     }
@@ -347,15 +380,15 @@ export default function App() {
               value={inputAddress}
               onChange={(e) => setInputAddress(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={scanning}
+              disabled={scanning || resolving}
               spellCheck={false}
             />
             <button
               className="scan-btn"
               onClick={() => handleScan()}
-              disabled={scanning}
+              disabled={scanning || resolving}
             >
-              {scanning ? '⟳ Scanning...' : '🔍 Scan Wallet'}
+              {resolving ? '⟳ Resolving ENS...' : scanning ? '⟳ Scanning...' : '🔍 Scan Wallet'}
             </button>
           </div>
           {error && (
@@ -372,7 +405,7 @@ export default function App() {
       {/* Stats Bar */}
       <div className="stats-bar">
         {[
-          { value: '6', label: 'Security Checks' },
+          { value: '8', label: 'Security Checks' },
           { value: '2', label: 'Threat Databases' },
           { value: 'Free', label: 'Always Free' },
           { value: 'Open', label: 'Source Code' },
@@ -405,7 +438,7 @@ export default function App() {
           · Powered by{' '}
           <a href="https://etherscan.io" target="_blank" rel="noreferrer">Etherscan</a>
           {' & '}
-          <a href="https://gopluslabs.io" target="_blank" rel="noreferrer">GoPlus Security</a>
+          <a href="https://honeypot.is" target="_blank" rel="noreferrer">Honeypot.is</a>
         </p>
         <p style={{ marginTop: 6 }}>
           🛡️ Read-only · No wallet connection required · Your keys stay yours
