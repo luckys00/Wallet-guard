@@ -1,0 +1,362 @@
+// WalletGuard Scanner — Core Security Logic
+// Uses:
+//   • Etherscan API (free key required)
+//   • DefiLlama / Ethereum public APIs (no key needed)
+//   • ENS Public API (no key needed)
+
+const ETHERSCAN_KEY = import.meta.env.VITE_ETHERSCAN_API_KEY || '';
+const ETHERSCAN_BASE = 'https://api.etherscan.io/api';
+
+// Known scam/hack contract list (expandable)
+const KNOWN_BAD_CONTRACTS = new Set([
+  '0x7f268357a8c2552623316e2562d90e642bb538e5', // OpenSea old exploit
+  '0x00000000006c3852cbef3e08e8df289169ede581', // Seaport phishing
+  '0x283af0b28c62c092c9727f1ee09c02ca627eb7f5', // ENS phishing
+]);
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+async function fetchEtherscan(params) {
+  const url = new URL(ETHERSCAN_BASE);
+  Object.entries({ ...params, apikey: ETHERSCAN_KEY }).forEach(([k, v]) =>
+    url.searchParams.set(k, v)
+  );
+  try {
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    if (data.status === '0' && data.message === 'NOTOK') return [];
+    return data.result ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// ── Check 1: Unlimited Token Approvals ─────────────────────────────────────
+
+export async function checkTokenApprovals(address) {
+  const normalTx = await fetchEtherscan({
+    module: 'account',
+    action: 'txlist',
+    address,
+    sort: 'desc',
+    offset: 200,
+    page: 1,
+  });
+
+  const approveTxs = (normalTx || []).filter(
+    (tx) =>
+      tx.input?.startsWith('0x095ea7b3') &&
+      tx.from?.toLowerCase() === address.toLowerCase() &&
+      tx.isError === '0'
+  );
+
+  const approvals = approveTxs.slice(0, 30).map((tx) => {
+    const input = tx.input;
+    const spender = '0x' + input.slice(34, 74);
+    const amountHex = input.slice(74, 138);
+    const isUnlimited =
+      amountHex === 'f'.repeat(64) ||
+      amountHex === 'f'.repeat(63) + 'e';
+    const isBadContract = KNOWN_BAD_CONTRACTS.has(tx.to?.toLowerCase());
+    return { spender, contract: tx.to, isUnlimited, isBadContract, timestamp: tx.timeStamp };
+  });
+
+  return approvals;
+}
+
+// ── Check 2: Malicious Contract Interactions ────────────────────────────────
+
+export async function checkMaliciousInteractions(address) {
+  const normalTx = await fetchEtherscan({
+    module: 'account',
+    action: 'txlist',
+    address,
+    sort: 'desc',
+    offset: 100,
+    page: 1,
+  });
+
+  const malicious = (normalTx || []).filter(
+    (tx) =>
+      tx.to && KNOWN_BAD_CONTRACTS.has(tx.to.toLowerCase()) && tx.isError === '0'
+  );
+
+  return malicious.length;
+}
+
+// ── Check 3: Address Poisoning Detection ─────────────────────────────────
+
+export async function checkAddressPoisoning(address) {
+  const tokenTx = await fetchEtherscan({
+    module: 'account',
+    action: 'tokentx',
+    address,
+    sort: 'desc',
+    offset: 200,
+    page: 1,
+  });
+
+  const addrLower = address.toLowerCase();
+  const addrPrefix = addrLower.slice(0, 8);
+  const addrSuffix = addrLower.slice(-6);
+  const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+
+  const poisoningAttempts = (tokenTx || []).filter((tx) => {
+    const from = tx.from?.toLowerCase() || '';
+    const to = tx.to?.toLowerCase() || '';
+    const recent = parseInt(tx.timeStamp) > thirtyDaysAgo;
+    const isIncoming = to === addrLower;
+    const zeroValue = tx.value === '0';
+    const looksLikeTarget =
+      (from.startsWith(addrPrefix) || from.endsWith(addrSuffix)) &&
+      from !== addrLower;
+    return recent && isIncoming && (zeroValue || looksLikeTarget);
+  });
+
+  return poisoningAttempts.length;
+}
+
+// ── Check 4: NFT Approvals (setApprovalForAll) ─────────────────────────────
+
+export async function checkNFTApprovals(address) {
+  const normalTx = await fetchEtherscan({
+    module: 'account',
+    action: 'txlist',
+    address,
+    sort: 'desc',
+    offset: 200,
+    page: 1,
+  });
+
+  // setApprovalForAll selector = 0xa22cb465
+  const nftApprovals = (normalTx || []).filter(
+    (tx) =>
+      tx.input?.startsWith('0xa22cb465') &&
+      tx.from?.toLowerCase() === address.toLowerCase() &&
+      tx.isError === '0'
+  );
+
+  return nftApprovals.length;
+}
+
+// ── Check 5: ENS Name ─────────────────────────────────────────────────────
+
+export async function checkENSName(address) {
+  try {
+    const res = await fetch(`https://api.ensideas.com/ens/resolve/${address}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.name || null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Check 6: Transaction Count ────────────────────────────────────────────
+
+export async function checkTxCount(address) {
+  const result = await fetchEtherscan({
+    module: 'proxy',
+    action: 'eth_getTransactionCount',
+    address,
+    tag: 'latest',
+  });
+  return result ? parseInt(result, 16) || 0 : 0;
+}
+
+// ── Check 7: ETH Balance ──────────────────────────────────────────────────
+
+export async function checkBalance(address) {
+  const result = await fetchEtherscan({
+    module: 'account',
+    action: 'balance',
+    address,
+    tag: 'latest',
+  });
+  if (!result || result === '0') return '0';
+  const eth = parseFloat(result) / 1e18;
+  return eth.toFixed(4);
+}
+
+// ── MAIN SCAN ─────────────────────────────────────────────────────────────
+
+export async function scanWallet(address, onStep) {
+  const issues = { critical: [], warning: [], safe: [] };
+  const recommendations = [];
+
+  // Step 1
+  onStep('Checking token approvals...', 1);
+  const approvals = await checkTokenApprovals(address);
+  const unlimitedApprovals = approvals.filter((a) => a.isUnlimited);
+  const badApprovals = approvals.filter((a) => a.isBadContract);
+
+  if (badApprovals.length > 0) {
+    issues.critical.push({
+      title: `${badApprovals.length} Approval(s) to Known Malicious Contract`,
+      description: 'You have approved a contract flagged in security databases. Revoke immediately.',
+      meta: `Flagged contract: ${badApprovals[0].contract?.slice(0, 20)}...`,
+      icon: '🚨',
+    });
+    recommendations.push('Revoke approvals to malicious contracts immediately via revoke.cash');
+  } else if (unlimitedApprovals.length > 4) {
+    issues.critical.push({
+      title: `${unlimitedApprovals.length} Unlimited Token Approvals`,
+      description: 'Too many contracts have unlimited access to your tokens. Any of these getting hacked can drain your wallet.',
+      meta: `${unlimitedApprovals.length} unlimited approvals detected`,
+      icon: '🔓',
+    });
+    recommendations.push('Revoke unlimited token approvals at revoke.cash');
+  } else if (unlimitedApprovals.length > 0) {
+    issues.warning.push({
+      title: `${unlimitedApprovals.length} Unlimited Token Approval(s)`,
+      description: 'Some contracts have unlimited access to your tokens. Revoke ones you no longer use.',
+      meta: `${unlimitedApprovals.length} unlimited approval(s)`,
+      icon: '⚠️',
+    });
+    recommendations.push('Review and revoke unused approvals on revoke.cash');
+  } else {
+    issues.safe.push({
+      title: 'Token Approvals Look Healthy',
+      description: 'No unlimited or suspicious token approvals detected.',
+      icon: '✅',
+    });
+  }
+
+  // Step 2
+  onStep('Checking malicious contract interactions...', 2);
+  const maliciousCount = await checkMaliciousInteractions(address);
+
+  if (maliciousCount > 0) {
+    issues.critical.push({
+      title: `Interacted with ${maliciousCount} Known Malicious Contract(s)`,
+      description: 'This wallet has sent transactions to contracts flagged as malicious or exploited.',
+      meta: `${maliciousCount} flagged interaction(s) found`,
+      icon: '☣️',
+    });
+    recommendations.push('Audit your transaction history and move funds to a fresh wallet');
+  } else {
+    issues.safe.push({
+      title: 'No Known Malicious Contract Interactions',
+      description: 'No interactions with known exploited or scam contracts found.',
+      icon: '✅',
+    });
+  }
+
+  // Step 3
+  onStep('Scanning for address poisoning attacks...', 3);
+  const poisoningCount = await checkAddressPoisoning(address);
+
+  if (poisoningCount >= 3) {
+    issues.critical.push({
+      title: `${poisoningCount} Address Poisoning Attempts Detected`,
+      description: 'Attackers sent lookalike zero-value transactions to trick you into copying their address.',
+      meta: `${poisoningCount} suspicious tx in last 30 days`,
+      icon: '☠️',
+    });
+    recommendations.push('Never copy addresses from your transaction history — always verify the full address');
+  } else if (poisoningCount > 0) {
+    issues.warning.push({
+      title: `${poisoningCount} Possible Poisoning Attempt(s)`,
+      description: 'Some suspicious lookalike transactions found. Stay cautious when copy-pasting addresses.',
+      meta: `${poisoningCount} suspicious tx in last 30 days`,
+      icon: '⚠️',
+    });
+  } else {
+    issues.safe.push({
+      title: 'No Address Poisoning Detected',
+      description: 'No address poisoning attempts found in the last 30 days.',
+      icon: '✅',
+    });
+  }
+
+  // Step 4
+  onStep('Checking NFT permissions...', 4);
+  const nftApprovals = await checkNFTApprovals(address);
+
+  if (nftApprovals > 5) {
+    issues.warning.push({
+      title: `${nftApprovals} Open NFT Collection Approvals`,
+      description: 'Multiple contracts can transfer all NFTs from your collections. Revoke ones not in use.',
+      meta: `${nftApprovals} setApprovalForAll calls`,
+      icon: '🎨',
+    });
+    recommendations.push('Review and revoke NFT approvals on revoke.cash');
+  } else if (nftApprovals > 0) {
+    issues.warning.push({
+      title: `${nftApprovals} NFT Approval(s) Found`,
+      description: 'Some NFT collection approvals exist. Ensure they are for protocols you trust.',
+      meta: `${nftApprovals} open approval(s)`,
+      icon: '🎨',
+    });
+  } else {
+    issues.safe.push({
+      title: 'No Open NFT Approvals',
+      description: 'No open NFT collection approvals detected.',
+      icon: '✅',
+    });
+  }
+
+  // Step 5
+  onStep('Looking up ENS name...', 5);
+  const ensName = await checkENSName(address);
+
+  if (ensName) {
+    issues.safe.push({
+      title: `ENS: ${ensName}`,
+      description: 'Wallet has a verified ENS name, improving on-chain identity trust.',
+      icon: '🔷',
+    });
+  } else {
+    issues.warning.push({
+      title: 'No ENS Name Found',
+      description: 'Consider registering an ENS name to establish your on-chain identity.',
+      icon: '💡',
+    });
+  }
+
+  // Step 6
+  onStep('Checking wallet activity & balance...', 6);
+  const [txCount, balance] = await Promise.all([
+    checkTxCount(address),
+    checkBalance(address),
+  ]);
+
+  if (txCount > 50) {
+    issues.safe.push({
+      title: `Active Wallet — ${txCount}+ Transactions`,
+      description: `High activity wallet with ${balance} ETH balance.`,
+      icon: '✅',
+    });
+  } else if (txCount > 0) {
+    issues.safe.push({
+      title: `Moderate Activity — ${txCount} Transactions`,
+      description: `Wallet has some on-chain activity. Balance: ${balance} ETH.`,
+      icon: '✅',
+    });
+  } else {
+    issues.warning.push({
+      title: 'New or Empty Wallet',
+      description: 'Very few transactions. If new, ensure seed phrase is safely backed up.',
+      icon: '💡',
+    });
+  }
+
+  // ── Score Calculation ──────────────────────────────────────────────────
+  const criticalPenalty = issues.critical.length * 20;
+  const warningPenalty = issues.warning.length * 7;
+  const safeBonus = issues.safe.length * 4;
+  const score = Math.max(0, Math.min(100, 100 - criticalPenalty - warningPenalty + safeBonus));
+
+  let grade, label;
+  if (score >= 85)      { grade = 'A'; label = 'Secure'; }
+  else if (score >= 65) { grade = 'B'; label = 'Moderate Risk'; }
+  else if (score >= 40) { grade = 'C'; label = 'At Risk'; }
+  else                  { grade = 'F'; label = 'Critical Risk'; }
+
+  if (recommendations.length === 0) {
+    recommendations.push('Great! Continue monitoring your wallet regularly with WalletGuard.');
+    recommendations.push('Consider using a hardware wallet for large holdings.');
+  }
+
+  return { score, grade, label, issues, recommendations, ensName, txCount, balance };
+}
