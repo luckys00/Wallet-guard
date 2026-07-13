@@ -678,3 +678,151 @@ body {
 .text-safe { color: var(--safe); }
 .text-blue { color: var(--accent-blue); }
 .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ────────────────────────────── RESPONSIVE ── */
+
+/* Tablet */
+@media (max-width: 768px) {
+  .results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .score-card {
+    position: static;
+  }
+
+  .hero {
+    padding: 50px 1.25rem 40px;
+  }
+
+  .hero h1 {
+    font-size: 1.8rem;
+  }
+
+  .stats-bar {
+    gap: 20px;
+    padding: 16px 1.25rem;
+  }
+
+  .main {
+    padding: 28px 1.25rem;
+  }
+
+  .header {
+    padding: 0 1.25rem;
+  }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .hero {
+    padding: 40px 1rem 32px;
+  }
+
+  .hero h1 {
+    font-size: 1.6rem;
+    line-height: 1.2;
+  }
+
+  .hero p {
+    font-size: 0.92rem;
+  }
+
+  /* Stack search box vertically on small screens */
+  .search-box {
+    flex-direction: column;
+    border-radius: 12px;
+  }
+
+  .search-input {
+    padding: 14px 16px;
+    border-radius: 12px 12px 0 0;
+    font-size: 0.88rem;
+  }
+
+  .scan-btn {
+    padding: 14px 20px;
+    border-radius: 0 0 12px 12px;
+    justify-content: center;
+    font-size: 0.9rem;
+  }
+
+  /* Stats bar wraps into 2x2 grid */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+    padding: 16px 1rem;
+  }
+
+  .stat-value {
+    font-size: 1.15rem;
+  }
+
+  /* Score card compact */
+  .score-circle-wrapper {
+    width: 130px;
+    height: 130px;
+  }
+
+  .score-value {
+    font-size: 2.2rem;
+  }
+
+  /* Share buttons stack */
+  .share-section {
+    flex-direction: column;
+  }
+
+  .share-btn {
+    justify-content: center;
+  }
+
+  /* Feature grid single column */
+  .feature-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Main padding */
+  .main {
+    padding: 20px 1rem;
+  }
+
+  /* Header logo text smaller */
+  .logo-text {
+    font-size: 1rem;
+  }
+
+  /* Issue cards */
+  .issue-card {
+    padding: 12px 14px;
+  }
+
+  .issue-title {
+    font-size: 0.85rem;
+  }
+
+  .issue-description {
+    font-size: 0.75rem;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 380px) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero h1 {
+    font-size: 1.4rem;
+  }
+
+  .score-breakdown {
+    gap: 10px;
+  }
+
+  .header-badge span:not(.dot-pulse) {
+    display: none;
+  }
+}
+
