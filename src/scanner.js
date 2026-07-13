@@ -5,7 +5,7 @@
 //   • ENS Public API (no key needed)
 
 const ETHERSCAN_KEY = import.meta.env.VITE_ETHERSCAN_API_KEY || '';
-const ETHERSCAN_BASE = 'https://api.etherscan.io/api';
+const ETHERSCAN_BASE = 'https://api.etherscan.io/v2/api';
 const HONEYPOT_BASE = 'https://api.honeypot.is/v2';
 
 // Comprehensive known malicious/hacked contract database
@@ -52,7 +52,8 @@ const KNOWN_BAD_CONTRACTS = new Set([
 
 async function fetchEtherscan(params) {
   const url = new URL(ETHERSCAN_BASE);
-  Object.entries({ ...params, apikey: ETHERSCAN_KEY }).forEach(([k, v]) =>
+  // Auto-inject chainid=1 for Mainnet in V2 API
+  Object.entries({ ...params, chainid: 1, apikey: ETHERSCAN_KEY }).forEach(([k, v]) =>
     url.searchParams.set(k, v)
   );
   try {
@@ -110,6 +111,7 @@ export async function checkIsContract(address) {
   try {
     const url = new URL(ETHERSCAN_BASE);
     Object.entries({
+      chainid: 1,
       module: 'proxy',
       action: 'eth_getCode',
       address,
@@ -118,8 +120,15 @@ export async function checkIsContract(address) {
     }).forEach(([k, v]) => url.searchParams.set(k, v));
     const res = await fetch(url.toString());
     const data = await res.json();
+    
+    // Etherscan V2 response safety check
+    if (data.error || (data.status === '0' && data.message === 'NOTOK')) {
+      return false;
+    }
+    
+    const code = data.result || '';
     // '0x' means EOA (regular wallet), anything longer means contract
-    return data.result && data.result !== '0x' && data.result.length > 2;
+    return code && code !== '0x' && code.length > 2;
   } catch {
     return false;
   }
