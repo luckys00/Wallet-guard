@@ -66,18 +66,10 @@ async function fetchEtherscan(params) {
 }
 
 // ── Check 1: Unlimited Token Approvals ─────────────────────────────────────
+// Accepts pre-fetched txList to avoid duplicate API calls
 
-export async function checkTokenApprovals(address) {
-  const normalTx = await fetchEtherscan({
-    module: 'account',
-    action: 'txlist',
-    address,
-    sort: 'desc',
-    offset: 200,
-    page: 1,
-  });
-
-  const approveTxs = (normalTx || []).filter(
+export function checkTokenApprovals(txList, address) {
+  const approveTxs = (txList || []).filter(
     (tx) =>
       tx.input?.startsWith('0x095ea7b3') &&
       tx.from?.toLowerCase() === address.toLowerCase() &&
@@ -85,7 +77,9 @@ export async function checkTokenApprovals(address) {
   );
 
   const approvals = approveTxs.slice(0, 30).map((tx) => {
-    const input = tx.input;
+    const input = tx.input || '';
+    // Guard: approve calldata must be at least 138 chars
+    if (input.length < 138) return null;
     const spender = '0x' + input.slice(34, 74);
     const amountHex = input.slice(74, 138);
     const isUnlimited =
@@ -93,30 +87,44 @@ export async function checkTokenApprovals(address) {
       amountHex === 'f'.repeat(63) + 'e';
     const isBadContract = KNOWN_BAD_CONTRACTS.has(tx.to?.toLowerCase());
     return { spender, contract: tx.to, isUnlimited, isBadContract, timestamp: tx.timeStamp };
-  });
+  }).filter(Boolean); // remove nulls from short inputs
 
   return approvals;
 }
 
 // ── Check 2: Malicious Contract Interactions ────────────────────────────────
+// Accepts pre-fetched txList to avoid duplicate API calls
 
-export async function checkMaliciousInteractions(address) {
-  const normalTx = await fetchEtherscan({
-    module: 'account',
-    action: 'txlist',
-    address,
-    sort: 'desc',
-    offset: 100,
-    page: 1,
-  });
-
-  const malicious = (normalTx || []).filter(
+export function checkMaliciousInteractions(txList) {
+  const malicious = (txList || []).filter(
     (tx) =>
       tx.to && KNOWN_BAD_CONTRACTS.has(tx.to.toLowerCase()) && tx.isError === '0'
   );
-
   return malicious.length;
 }
+
+// ── Check 2b: Is Contract Address? ─────────────────────────────────────────
+// Detects if scanned address is a smart contract (not a user wallet)
+
+export async function checkIsContract(address) {
+  try {
+    const url = new URL(ETHERSCAN_BASE);
+    Object.entries({
+      module: 'proxy',
+      action: 'eth_getCode',
+      address,
+      tag: 'latest',
+      apikey: ETHERSCAN_KEY,
+    }).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    // '0x' means EOA (regular wallet), anything longer means contract
+    return data.result && data.result !== '0x' && data.result.length > 2;
+  } catch {
+    return false;
+  }
+}
+
 
 // ── Check 3: Address Poisoning Detection ─────────────────────────────────
 
@@ -266,9 +274,33 @@ export async function scanWallet(address, onStep) {
   const issues = { critical: [], warning: [], safe: [] };
   const recommendations = [];
 
-  // Step 1
+  // ── Pre-fetch: Fetch txList ONCE — shared between checks 1 & 2
+  // Also run contract detection in parallel (saves time)
   onStep('Checking token approvals...', 1);
-  const approvals = await checkTokenApprovals(address);
+  const [txList, isContract] = await Promise.all([
+    fetchEtherscan({
+      module: 'account',
+      action: 'txlist',
+      address,
+      sort: 'desc',
+      offset: 200,
+      page: 1,
+    }),
+    checkIsContract(address),
+  ]);
+
+  // Warn if scanning a contract address, not a user wallet
+  if (isContract) {
+    issues.warning.push({
+      title: 'This is a Smart Contract Address',
+      description: 'You scanned a contract, not a regular wallet. Some checks may not apply.',
+      meta: 'For best results, scan a regular wallet (EOA) address',
+      icon: '📄',
+    });
+  }
+
+  // Step 1 — Token Approvals (using shared txList)
+  const approvals = checkTokenApprovals(txList, address);
   const unlimitedApprovals = approvals.filter((a) => a.isUnlimited);
   const badApprovals = approvals.filter((a) => a.isBadContract);
 
@@ -304,9 +336,9 @@ export async function scanWallet(address, onStep) {
     });
   }
 
-  // Step 2
+  // Step 2 — Malicious Contracts (using shared txList — no extra API call)
   onStep('Checking malicious contract interactions...', 2);
-  const maliciousCount = await checkMaliciousInteractions(address);
+  const maliciousCount = checkMaliciousInteractions(txList);
 
   if (maliciousCount > 0) {
     issues.critical.push({
