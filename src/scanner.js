@@ -352,19 +352,11 @@ export async function scanWallet(address, onStep) {
       icon: '🚨',
     });
     recommendations.push('Revoke approvals to malicious contracts immediately via revoke.cash');
-  } else if (unlimitedApprovals.length > 4) {
-    issues.critical.push({
-      title: `${unlimitedApprovals.length} Unlimited Token Approvals`,
-      description: 'Too many contracts have unlimited access to your tokens. Any of these getting hacked can drain your wallet.',
-      meta: `${unlimitedApprovals.length} unlimited approvals detected`,
-      icon: '🔓',
-    });
-    recommendations.push('Revoke unlimited token approvals at revoke.cash');
   } else if (unlimitedApprovals.length > 0) {
     issues.warning.push({
       title: `${unlimitedApprovals.length} Unlimited Token Approval(s)`,
-      description: 'Some contracts have unlimited access to your tokens. Revoke ones you no longer use.',
-      meta: `${unlimitedApprovals.length} unlimited approval(s)`,
+      description: 'You have active unlimited token approvals. If you no longer use these protocols, consider revoking access to prevent contract exploit risks.',
+      meta: `${unlimitedApprovals.length} unlimited approval(s) detected`,
       icon: '⚠️',
     });
     recommendations.push('Review and revoke unused approvals on revoke.cash');
@@ -540,9 +532,15 @@ export async function scanWallet(address, onStep) {
   if (issues.critical.length > 0) {
     calculatedScore = Math.min(calculatedScore, 35);
   }
-  // 2. Any warning immediately limits the score to 69 (Grade C - Moderate Risk)
-  else if (issues.warning.length > 0) {
-    calculatedScore = Math.min(calculatedScore, 69);
+  // 2. Granular caps for warnings:
+  else if (issues.warning.length >= 3) {
+    calculatedScore = Math.min(calculatedScore, 49); // Max 49 (Grade D - High Risk)
+  }
+  else if (issues.warning.length === 2) {
+    calculatedScore = Math.min(calculatedScore, 69); // Max 69 (Grade C - Moderate Risk)
+  }
+  else if (issues.warning.length === 1) {
+    calculatedScore = Math.min(calculatedScore, 84); // Max 84 (Grade B - Low Risk)
   }
 
   const score = calculatedScore;
