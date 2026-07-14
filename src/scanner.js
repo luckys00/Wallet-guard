@@ -501,13 +501,13 @@ export async function scanWallet(address, onStep) {
   if (riskyTokens.length > 0) {
     const honeypots = riskyTokens.filter(t => t.isHoneypot);
     if (honeypots.length > 0) {
-      issues.critical.push({
+      issues.warning.push({
         title: `${honeypots.length} Honeypot Token(s) in Your Wallet`,
         description: 'Your wallet holds tokens that are designed to trap buyers — you cannot sell them.',
         meta: honeypots.map(t => t.tokenName).join(', '),
         icon: '🍯',
       });
-      recommendations.push('Do NOT buy more of these tokens — they are honeypots designed to steal funds');
+      recommendations.push('Do NOT buy or trade more of these tokens — they are honeypots designed to trap funds');
     } else {
       issues.warning.push({
         title: `${riskyTokens.length} High-Risk Token(s) Detected`,
