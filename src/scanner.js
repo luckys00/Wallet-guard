@@ -253,6 +253,13 @@ export async function checkBalance(address) {
 // Checks top ERC-20 tokens in wallet for honeypot/scam characteristics
 
 export async function checkTokenSecurity(address) {
+  const addrLower = address.toLowerCase();
+  
+  // Skip token security scanning for zero/burn addresses (not real wallets)
+  if (addrLower === '0x0000000000000000000000000000000000000000' || addrLower === '0x000000000000000000000000000000000000dead') {
+    return { riskyTokens: [], checkedCount: 0 };
+  }
+
   // Get tokens held by this wallet
   const tokenTx = await fetchEtherscan({
     module: 'account',
@@ -453,10 +460,10 @@ export async function scanWallet(address, onStep) {
       icon: '🔷',
     });
   } else {
-    issues.warning.push({
-      title: 'No ENS Name Found',
-      description: 'Consider registering an ENS name to establish your on-chain identity.',
-      icon: '💡',
+    issues.safe.push({
+      title: 'No ENS Domain Registered',
+      description: 'No ENS domain is linked. This does not affect security, but registering one establishes your Web3 identity.',
+      icon: '🔷',
     });
   }
 
@@ -480,10 +487,10 @@ export async function scanWallet(address, onStep) {
       icon: '✅',
     });
   } else {
-    issues.warning.push({
-      title: 'New or Empty Wallet',
-      description: 'Very few transactions. If new, ensure seed phrase is safely backed up.',
-      icon: '💡',
+    issues.safe.push({
+      title: 'New or Inactive Wallet',
+      description: 'Zero or very few transactions detected. This is a clean address.',
+      icon: '✅',
     });
   }
 

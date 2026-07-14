@@ -15,7 +15,7 @@ describe('Bulk Wallet Scanning and Score Coverage Verification', () => {
     {
       name: 'Null Address (System Burn Wallet)',
       address: '0x0000000000000000000000000000000000000000',
-      expectedGrade: 'C'
+      expectedGrade: 'A' // Capped at A (0 warnings now, ENS/Empty are safe checks)
     },
     {
       name: 'Tornado Cash Router (Sanctioned Contract)',
@@ -30,7 +30,7 @@ describe('Bulk Wallet Scanning and Score Coverage Verification', () => {
     {
       name: 'USDT Token (Standard ERC-20 Contract)',
       address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-      expectedGrade: 'C'
+      expectedGrade: 'B' // Only 1 warning (smart contract warning), caps at B
     },
     {
       name: 'Machi Big Brother (Active Collector EOA)',
@@ -40,7 +40,7 @@ describe('Bulk Wallet Scanning and Score Coverage Verification', () => {
     {
       name: 'Empty Wallet (Inactive EOA)',
       address: '0x4838B106fcE96472698A96c14838B106FCE96472',
-      expectedGrade: 'C' // Capped at C (2 warnings: No ENS + empty wallet)
+      expectedGrade: 'A' // Capped at A (0 warnings now, ENS/Empty are safe checks)
     },
     {
       name: 'BadgerDAO Exploit (Hacked Contract)',
@@ -55,7 +55,7 @@ describe('Bulk Wallet Scanning and Score Coverage Verification', () => {
     {
       name: 'Clean Trader EOA (Standard user wallet)',
       address: '0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503',
-      expectedGrade: 'C'
+      expectedGrade: 'B' // Only 1 warning (honeypot check warning), caps at B
     }
   ];
 
