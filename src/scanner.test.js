@@ -45,7 +45,7 @@ describe('WalletGuard Scanner Logic (Offline Mocks)', () => {
     it('should detect interactions with known bad contracts', () => {
       const mockTxList = [
         {
-          to: '0x1a2a1c938ce3ec39b6d47113c7955baa9dd454f2', // Ronin Bridge hack contract
+          to: '0x1a2a1c938ce3ec39b6d47113c7955baa9dd454f2',
           isError: '0'
         }
       ];
