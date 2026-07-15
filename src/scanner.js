@@ -50,20 +50,48 @@ const KNOWN_BAD_CONTRACTS = new Set([
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function fetchEtherscan(params) {
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchEtherscan(params, retries = 3) {
   const url = new URL(ETHERSCAN_BASE);
   // Auto-inject chainid=1 for Mainnet in V2 API
   Object.entries({ ...params, chainid: 1, apikey: ETHERSCAN_KEY }).forEach(([k, v]) =>
     url.searchParams.set(k, v)
   );
-  try {
-    const res = await fetch(url.toString());
-    const data = await res.json();
-    if (data.status === '0' && data.message === 'NOTOK') return [];
-    return data.result ?? [];
-  } catch {
-    return [];
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url.toString());
+      if (!res.ok) {
+        if (res.status === 429) {
+          await sleep(350 * (i + 1));
+          continue;
+        }
+        throw new Error(`HTTP error ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.status === '0' && data.message === 'NOTOK') {
+        const errMsg = String(data.result || '').toLowerCase();
+        // If rate limited or throttled, wait and retry
+        if (errMsg.includes('rate limit') || errMsg.includes('max rate') || errMsg.includes('throttled')) {
+          await sleep(400 * (i + 1));
+          continue;
+        }
+        // No transactions found is a normal empty response, not an error
+        if (errMsg.includes('no transactions') || errMsg.includes('no records')) {
+          return [];
+        }
+        return [];
+      }
+      return data.result ?? [];
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await sleep(300 * (i + 1));
+    }
   }
+  throw new Error('Etherscan rate limit reached. Please try again.');
 }
 
 // ── Check 1: Unlimited Token Approvals ─────────────────────────────────────
@@ -107,38 +135,52 @@ export function checkMaliciousInteractions(txList) {
 // ── Check 2b: Is Contract Address? ─────────────────────────────────────────
 // Detects if scanned address is a smart contract (not a user wallet)
 
-export async function checkIsContract(address) {
-  try {
-    const url = new URL(ETHERSCAN_BASE);
-    Object.entries({
-      chainid: 1,
-      module: 'proxy',
-      action: 'eth_getCode',
-      address,
-      tag: 'latest',
-      apikey: ETHERSCAN_KEY,
-    }).forEach(([k, v]) => url.searchParams.set(k, v));
-    const res = await fetch(url.toString());
-    const data = await res.json();
-    
-    // Etherscan V2 response safety check
-    if (data.error || (data.status === '0' && data.message === 'NOTOK')) {
-      return false;
+export async function checkIsContract(address, retries = 3) {
+  const url = new URL(ETHERSCAN_BASE);
+  Object.entries({
+    chainid: 1,
+    module: 'proxy',
+    action: 'eth_getCode',
+    address,
+    tag: 'latest',
+    apikey: ETHERSCAN_KEY,
+  }).forEach(([k, v]) => url.searchParams.set(k, v));
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url.toString());
+      if (!res.ok) {
+        await sleep(350 * (i + 1));
+        continue;
+      }
+      const data = await res.json();
+      
+      // Etherscan V2 response safety check
+      if (data.error || (data.status === '0' && data.message === 'NOTOK')) {
+        const errMsg = String(data.result || data.error?.message || '').toLowerCase();
+        if (errMsg.includes('rate limit') || errMsg.includes('max rate') || errMsg.includes('throttled')) {
+          await sleep(400 * (i + 1));
+          continue;
+        }
+        return false;
+      }
+      
+      const code = data.result || '';
+      
+      // EIP-7702 EOA Smart Account check:
+      // If code starts with '0xef01', it's a delegated EOA wallet (not a traditional contract)
+      if (code.startsWith('0xef01')) {
+        return false;
+      }
+      
+      // '0x' means EOA (regular wallet), anything longer means contract
+      return code && code !== '0x' && code.length > 2;
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await sleep(300 * (i + 1));
     }
-    
-    const code = data.result || '';
-    
-    // EIP-7702 EOA Smart Account check:
-    // If code starts with '0xef01', it's a delegated EOA wallet (not a traditional contract)
-    if (code.startsWith('0xef01')) {
-      return false;
-    }
-    
-    // '0x' means EOA (regular wallet), anything longer means contract
-    return code && code !== '0x' && code.length > 2;
-  } catch {
-    return false;
   }
+  throw new Error('Etherscan proxy rate limit');
 }
 
 
